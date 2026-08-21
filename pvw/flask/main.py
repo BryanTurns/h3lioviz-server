@@ -15,9 +15,14 @@ def health():
     return jsonify(status="ok"), 200
 
 
+@app.route("/h3lioviz/metadata/ec2start", methods=["GET"])
+def ec2start():
+    return "Starting instance ['i-xyz123']", 200
+
+
 @app.route("/h3lioviz/metadata/ec2status", methods=["GET"])
 def ec2status():
-    return jsonify(status="ok"), 200
+    return "['i-xyz123'] running, ok", 200
 
 
 @app.route("/h3lioviz/metadata/getTimeSeries/<run_id>/<satellite>", methods=["GET"])
