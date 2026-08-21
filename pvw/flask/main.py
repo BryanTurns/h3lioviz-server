@@ -1,10 +1,9 @@
 import logging
 
-from flask import Flask, abort, jsonify
-
 import get_timeseries as timeseries
 import h3lioviz_list_runs as runs
 import sync_metadata as metadata
+from flask import Flask, abort, jsonify
 
 app = Flask(__name__)
 
@@ -14,6 +13,16 @@ logger = logging.getLogger(__name__)
 @app.route("/h3lioviz/metadata/health", methods=["GET"])
 def health():
     return jsonify(status="ok"), 200
+
+
+@app.route("/h3lioviz/metadata/ec2start", methods=["GET"])
+def ec2start():
+    return "Starting instance ['i-xyz123']", 200
+
+
+@app.route("/h3lioviz/metadata/ec2status", methods=["GET"])
+def ec2status():
+    return "['i-xyz123'] running, ok", 200
 
 
 @app.route("/h3lioviz/metadata/getTimeSeries/<run_id>/<satellite>", methods=["GET"])
