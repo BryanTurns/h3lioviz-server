@@ -279,8 +279,16 @@ class App(pv_protocols.ParaViewWebProtocol):
         self.lon_slice = slice.Slice(
             self.data, slice_type="Plane", normal=(0, 0, 1), name="Longitude"
         )
+        # The meridional slice only shows the half of the plane that goes through
+        # Earth, which is at -x in Enlil and +x in Euhforia
+        earth = self.model.satellites["earth"].get_position(self.get_current_time())
+        self._earth_side = math.copysign(1, earth[0])
         self.lat_slice = slice.Slice(
-            self.data, slice_type="Plane", normal=(0, 1, 0), name="Latitude"
+            self.data,
+            slice_type="Plane",
+            normal=(0, 1, 0),
+            half=(self._earth_side, 0, 0),
+            name="Latitude",
         )
         self.radial_slice = slice.Slice(
             self.data, slice_type="Sphere", radius=1, name="Radial"
@@ -803,6 +811,9 @@ class App(pv_protocols.ParaViewWebProtocol):
             loc = [-y, x, 0]
             self.lat_slice.slice_data.SliceType.Normal = loc
             self.lat_slice.stream_source.Normal = loc
+            # Rotate the half of the plane we show along with it
+            half = [self._earth_side * x, self._earth_side * y, 0]
+            self.lat_slice.slice.ClipType.Normal = half
         else:
             raise ValueError("You can only update the 'lon' or 'lat' plane.")
 

@@ -13,6 +13,9 @@ class Slice:
         The type of slice ("Plane", "Sphere")
     normal : 3-tuple
         The normal to the plane (only used for "Plane" slice_type)
+    half : 3-tuple
+        Only show the half of the plane on this side of the origin, or the
+        whole plane if None (only used for "Plane" slice_type)
     radius : Number
         The radius of the sphere (only used for "Sphere" slice_type)
     name : str
@@ -24,6 +27,7 @@ class Slice:
         data,
         slice_type="Plane",
         normal=(0, 0, 1),
+        half=None,
         radius=1,
         name="",
         view=None,
@@ -48,8 +52,20 @@ class Slice:
         else:
             raise ValueError("Can only use a Plane or Sphere slice type")
 
+        # What gets displayed, either the whole slice or one half of the plane
+        self.slice = self.slice_data
+        if half is not None and slice_type == "Plane":
+            self.slice = pvs.Clip(
+                registrationName=f"{name}-Half", Input=self.slice_data
+            )
+            self.slice.ClipType = "Plane"
+            self.slice.ClipType.Origin = [0, 0, 0]
+            self.slice.ClipType.Normal = half
+            # Keep the side the clip normal points toward
+            self.slice.Invert = 0
+
         # Set up the display
-        self.slice_disp = pvs.Show(self.slice_data, self.view, "GeometryRepresentation")
+        self.slice_disp = pvs.Show(self.slice, self.view, "GeometryRepresentation")
         self.slice_disp.Representation = "Surface"
         self._variable = "Bz"
         self.slice_disp.ColorArrayName = ["POINTS", self._variable]
@@ -82,9 +98,7 @@ class Slice:
 
         # Create the magnetic field vectors through a PV Function, which
         # we want to be in Point Data, not Cell Data
-        bvec = pvs.Calculator(
-            registrationName=f"{self.name}-Bvec", Input=self.slice_data
-        )
+        bvec = pvs.Calculator(registrationName=f"{self.name}-Bvec", Input=self.slice)
         bvec.AttributeType = "Point Data"
         bvec.ResultArrayName = "Bvec"
         bvec.Function = "Bx*iHat + By*jHat + Bz*kHat"
@@ -160,7 +174,7 @@ class Slice:
 
     def hide(self):
         """Hide the plane"""
-        pvs.Hide(self.slice_data)
+        pvs.Hide(self.slice)
 
     def hide_streamlines(self):
         """Hide the streamlines on the plane"""
@@ -169,7 +183,7 @@ class Slice:
 
     def show(self):
         """Show the plane"""
-        pvs.Show(self.slice_data)
+        pvs.Show(self.slice)
 
     def show_streamlines(self):
         """Show the streamlines on the plane"""
