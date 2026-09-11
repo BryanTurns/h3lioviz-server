@@ -442,6 +442,9 @@ class App(pv_protocols.ParaViewWebProtocol):
                 continue
             self.satellites[sat].add_fieldline(self.bvec)
         self.earth.add_fieldline(self.bvec)
+        # Initialize positions even when switching runs at the same time.
+        self._previous_time = None
+        self.update(None, None)
 
     @exportRpc("pv.h3lioviz.get_available_runs")
     def get_available_runs(self):
@@ -914,7 +917,7 @@ class App(pv_protocols.ParaViewWebProtocol):
 
         # Rotate the Earth image
         self.earth.update(curr_time)
-        self._previous_time == curr_time
+        self._previous_time = curr_time
 
     def get_current_time(self):
         """Retrieves the current time of the view.
