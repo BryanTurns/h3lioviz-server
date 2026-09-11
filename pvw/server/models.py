@@ -298,5 +298,14 @@ class EnlilSatellite(ModelSatellite):
         -------
         Tuple (X, Y, Z) of the position of the satellite to the requested time.
         """
+        if self.name in ("mars", "venus", "mercury"):
+            # Interpolate in the stored model frame, clamping to the endpoints
+            # outside the trajectory's time coverage.
+            seconds = (self.times - self.times[0]) / np.timedelta64(1, "s")
+            requested = (np.datetime64(time) - self.times[0]) / np.timedelta64(1, "s")
+            return tuple(
+                np.interp(requested, seconds, axis)
+                for axis in (self.X, self.Y, self.Z)
+            )
         loc = np.argmin(np.abs(np.datetime64(time) - self.times))
         return self.X[loc], self.Y[loc], self.Z[loc]

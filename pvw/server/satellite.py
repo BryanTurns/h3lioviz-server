@@ -71,6 +71,7 @@ class Satellite:
             raise ValueError("Satellite representation can only be 'box' or 'sphere'")
 
         self.model_satellite = model_satellite
+        self._fixed_position = None
         name = self.model_satellite.name
         self.color = (
             SATELLITE_COLORS[name] if name in SATELLITE_COLORS else [0.5, 0.5, 0.5]
@@ -101,6 +102,7 @@ class Satellite:
             Position information for the satellite
         """
         self.model_satellite = model_satellite
+        self._fixed_position = None
 
     def add_fieldline(self, data):
         """
@@ -174,7 +176,14 @@ class Satellite:
         time : datetime
             The time of the visualization
         """
-        self.sat.Center = self.model_satellite.get_position(time=time)
+        if self.model_satellite.name in ("mars", "venus", "mercury"):
+            position = self.model_satellite.get_position(time=time)
+        else:
+            # Keep Earth and spacecraft at their initial position for this run.
+            if self._fixed_position is None:
+                self._fixed_position = self.model_satellite.get_position(time=time)
+            position = self._fixed_position
+        self.sat.Center = position
         self.label_disp.BillboardPosition = [x + self.size for x in self.sat.Center]
         if hasattr(self, "stream_input"):
             self.stream_input.SeedType.Center = self.sat.Center

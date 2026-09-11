@@ -453,6 +453,9 @@ class App(pv_protocols.ParaViewWebProtocol):
                 continue
             self.satellites[sat].add_fieldline(self.bvec)
         self.earth.add_fieldline(self.bvec)
+        # Initialize positions even when switching runs at the same time.
+        self._previous_time = None
+        self.update(None, None)
 
     @exportRpc("pv.h3lioviz.get_available_runs")
     def get_available_runs(self):
