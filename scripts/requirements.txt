@@ -3,6 +3,7 @@ netcdf4
 numpy
 scipy
 xarray
+vtk>=9.0
 importlib-metadata==4.13.0
 
 # Additional dependencies for helioweb

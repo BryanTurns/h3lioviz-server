@@ -241,9 +241,17 @@ Reference the [README](scripts/README.md) in `scripts/` for instructions on how 
 
 The primary data files used by ParaView for visualization are:
 
-- `pv-tim.XXXX.nc` - Time-step files (where XXXX is the time-step number)
+- `pv-tim.XXXX.vts` - Compressed VTK structured-grid time-step files (where XXXX is the time-step number)
 
-These NetCDF files contain the 3D heliospheric simulation data.
+Each file stores Cartesian points in AU and the simulation fields as point data.
+The 0° and 360° planes have identical coordinates and values, closing the longitude
+seam before ParaView slices the data. `TimeValue` stores UTC seconds since the Unix
+epoch, so animation and satellite positions use the simulation timestamps.
+`metadata.json` identifies these runs with `program: "enlil"` and
+`data_format: "vts-point-data"`. Existing `pv-tim.XXXX.nc` and `pv-data-3d.nc` runs
+remain readable; when both formats are present, the server prefers VTS.
+Seam handling happens entirely during preprocessing. Reprocess legacy NetCDF runs
+to VTS to receive the fix; the server no longer applies a seam-blending filter.
 The test-data directory contains additional files (satellite evolution files, metadata, etc.) that are graphed by the frontend but are not directly loaded by ParaView.
 
 ## Adding Python Packages
