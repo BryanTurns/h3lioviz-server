@@ -5,6 +5,21 @@ import numpy as np
 import paraview.simple as pvs
 
 
+def detect_program(dirname, default="enlil"):
+    """Identify the model independently of the structured-grid extension."""
+    metadata = dirname / "metadata.json"
+    if metadata.exists():
+        with metadata.open() as stream:
+            program = json.load(stream).get("program")
+        if program:
+            return program.lower()
+    if any(dirname.glob("pv-tim*.vts")) or any(dirname.glob("pv-*.nc")):
+        return "enlil"
+    if any(dirname.glob("data_*.vts")):
+        return "euhforia"
+    return default
+
+
 class Model:
     """Heliosphere 3D model output"""
 
@@ -76,32 +91,55 @@ class Enlil(Model):
         }
         super().__init__(dirname=dirname, variable_mapping=variable_mapping)
 
-        self.data = pvs.NetCDFReader(
-            registrationName="enlil-data", FileName=self._get_filenames()
+        self._sources = self._create_sources()
+        # Keep a stable output so switching between VTS and legacy NetCDF runs
+        # does not disconnect the slices, contours, or satellite field lines.
+        self.data = pvs.PassThrough(
+            registrationName="enlil-pointdata", Input=self._sources[-1]
         )
-        self.data.Dimensions = "(longitude, latitude, radius)"
         self._load_satellites()
+
+    def _create_sources(self):
+        filenames = self._get_filenames()
+        if filenames[0].endswith(".vts"):
+            reader = pvs.XMLStructuredGridReader(
+                registrationName="enlil-data", FileName=filenames
+            )
+            reader.TimeArray = "TimeValue"
+            return [reader]
+        reader = pvs.NetCDFReader(registrationName="enlil-data", FileName=filenames)
+        reader.Dimensions = "(longitude, latitude, radius)"
+        point_data = pvs.CellDatatoPointData(
+            registrationName="enlil-legacy-pointdata", Input=reader
+        )
+        point_data.ProcessAllArrays = 1
+        return [reader, point_data]
 
     def _get_filenames(self):
         """
-        Get the filenames for the current model run. There are two styles a
-        filename can be, old-style: one large file, new-style: individual file
-        for each timestep.
+        Get VTS timesteps, legacy NetCDF timesteps, or one legacy NetCDF volume.
 
         Returns
         -------
         list(str)
             List of string filenames
         """
-        # list of strings
+        # Prefer new point-data files when a directory also contains old output.
+        vts_files = sorted(self.dir.glob("pv-tim*.vts"))
+        if vts_files:
+            return [str(x) for x in vts_files]
         legacy_filename = self.dir / "pv-data-3d.nc"
         if legacy_filename.exists():
             # Old-style processing with a single giant file
             return [str(legacy_filename)]
         # New processing with a single file for each timestep
-        return [str(x) for x in sorted(self.dir.glob("pv-tim*.nc"))]
+        filenames = [str(x) for x in sorted(self.dir.glob("pv-tim*.nc"))]
+        if not filenames:
+            raise ValueError(f"No ENLIL timestep files found in {self.dir}")
+        return filenames
 
     def _load_satellites(self):
+        self.satellites = {"earth": ModelSatellite("earth", (-1, 0, 0))}
         sat_files = self.dir.glob("evo.*.json")
         for sat_file in sat_files:
             # strip the extra components from the name
@@ -116,10 +154,14 @@ class Enlil(Model):
         Parameters
         ----------
         dirname : Path
-            Path of the directory containing the EUHFORIA model output
+            Path of the directory containing the ENLIL model output
         """
         self.dir = dirname
-        self.data.FileName = self._get_filenames()
+        sources = self._create_sources()
+        self.data.Input = sources[-1]
+        for source in reversed(self._sources):
+            pvs.Delete(source)
+        self._sources = sources
         # Reload the satellite files for this run
         self._load_satellites()
 

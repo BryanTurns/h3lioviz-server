@@ -179,20 +179,26 @@ class App(pv_protocols.ParaViewWebProtocol):
             else:
                 raise ValueError(f"No run available for id: {run_id}")
 
-        # Automatic detection of data source Enlil vs Euhforia
-        if len(list(data_dir.glob("*.vts"))):
-            # Euhforia data has vts files, so if we detect any in
-            # this directory then that is the model we will use
-            program = "euhforia"
+        program = models.detect_program(data_dir, default=program)
 
         if hasattr(self, "model"):
+            expected_model = {"enlil": models.Enlil, "euhforia": models.Euhforia}.get(
+                program
+            )
+            if expected_model is None or not isinstance(self.model, expected_model):
+                raise ValueError("Start a new session to switch simulation programs")
             # We already have a model initialized, so we just need to switch
             # the directory underneath the hood without recreating all the filters
             self.model.change_run(data_dir)
+            self._previous_time = None
             # Update the satellite data files associated with the run
             self._setup_satellites()
+            scene = pvs.GetAnimationScene()
+            scene.UpdateAnimationUsingDataTimeSteps()
+            scene.AnimationTime = scene.StartTime
             # Force an update and re-render
-            self.model.data.UpdatePipeline()
+            self.model.data.UpdatePipeline(time=scene.StartTime)
+            self.update(None, None)
             pvs.Render(self.view)
             return
 
@@ -206,16 +212,15 @@ class App(pv_protocols.ParaViewWebProtocol):
             raise ValueError(
                 f"We cannot load {program} data at this time, only enlil and euhforia are supported"
             )
+        scene = pvs.GetAnimationScene()
+        scene.UpdateAnimationUsingDataTimeSteps()
+        scene.AnimationTime = scene.StartTime
         self._init_filters()
 
     def _init_filters(self):
         """Initialize all of the paraview filters"""
-        # Force all cell data to point data in the volume
-        self.data = pvs.CellDatatoPointData(
-            registrationName="3D-CellDatatoPointData", Input=self.model.data
-        )
-        self.data.ProcessAllArrays = 1
-        self.data.PassCellData = 1
+        # Models expose point data; new ENLIL files already close the seam on disk.
+        self.data = self.model.data
 
         self.bvec = pvs.Calculator(registrationName="3D-Bvec", Input=self.data)
         self.bvec.AttributeType = "Point Data"
@@ -273,13 +278,21 @@ class App(pv_protocols.ParaViewWebProtocol):
 
         # Create the slices
         self.lon_slice = slice.Slice(
-            self.model.data, slice_type="Plane", normal=(0, 0, 1), name="Longitude"
+            self.data, slice_type="Plane", normal=(0, 0, 1), name="Longitude"
         )
+        # The meridional slice only shows the half of the plane that goes through
+        # Earth, which is at -x in Enlil and +x in Euhforia
+        earth = self.model.satellites["earth"].get_position(self.get_current_time())
+        self._earth_side = math.copysign(1, earth[0])
         self.lat_slice = slice.Slice(
-            self.model.data, slice_type="Plane", normal=(0, 1, 0), name="Latitude"
+            self.data,
+            slice_type="Plane",
+            normal=(0, 1, 0),
+            half=(self._earth_side, 0, 0),
+            name="Latitude",
         )
         self.radial_slice = slice.Slice(
-            self.model.data, slice_type="Sphere", radius=1, name="Radial"
+            self.data, slice_type="Sphere", radius=1, name="Radial"
         )
 
         # Dictionary mapping of string names to the object
@@ -425,16 +438,14 @@ class App(pv_protocols.ParaViewWebProtocol):
             if "stereo" in x.name
         }
 
-        # Add the inner planets
-        self.satellites["mars"] = satellite.Mars(
-            self.model.satellites["mars"], self.view
-        )
-        self.satellites["venus"] = satellite.Venus(
-            self.model.satellites["venus"], self.view
-        )
-        self.satellites["mercury"] = satellite.Mercury(
-            self.model.satellites["mercury"], self.view
-        )
+        # HelioWeb planet data is optional and may differ between runs.
+        for name, planet in (
+            ("mars", satellite.Mars),
+            ("venus", satellite.Venus),
+            ("mercury", satellite.Mercury),
+        ):
+            if name in self.model.satellites:
+                self.satellites[name] = planet(self.model.satellites[name], self.view)
 
         # Add the fieldlines to the satellites + Earth
         for sat in self.satellites:
@@ -481,7 +492,8 @@ class App(pv_protocols.ParaViewWebProtocol):
             Name of variable to colormap all of the surfaces by
         """
         variable = self.model.get_variable(name)
-        return self.model.data.CellData.GetArray(variable).GetRange()
+        self.data.UpdatePipeline(time=pvs.GetAnimationScene().TimeKeeper.Time)
+        return self.data.PointData.GetArray(variable).GetRange()
 
     @exportRpc("pv.h3lioviz.visibility")
     def change_visibility(self, obj, visibility):
@@ -802,6 +814,9 @@ class App(pv_protocols.ParaViewWebProtocol):
             loc = [-y, x, 0]
             self.lat_slice.slice_data.SliceType.Normal = loc
             self.lat_slice.stream_source.Normal = loc
+            # Rotate the half of the plane we show along with it
+            half = [self._earth_side * x, self._earth_side * y, 0]
+            self.lat_slice.slice.ClipType.Normal = half
         else:
             raise ValueError("You can only update the 'lon' or 'lat' plane.")
 

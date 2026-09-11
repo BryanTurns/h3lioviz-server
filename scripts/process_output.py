@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import xarray as xr
 from process_helioweb import HELIOWEB_OBJECT_CODES, process_helioweb
+from structured_grid import write_vts
 
 # Earth to Sun distance (m)
 AU = 1.496e11
@@ -307,11 +308,8 @@ def process_directory(
                 with open(newpath / "metadata.json", "w") as f:
                     f.write(json.dumps(metadata, cls=NumpyEncoder))
 
-            # Save single file
-            ds.to_netcdf(
-                newpath / f"pv-{fname.name}",
-                encoding={"time": {"units": "seconds since 1970-01-01"}},
-            )
+            # Store Cartesian coordinates and periodic point data directly.
+            write_vts(ds, newpath / f"pv-{fname.stem}.vts")
     print(f"TIM files processed: {time.time() - t0} s")
 
     print(f"Processing {len(evo_fnames)} EVO files")
@@ -353,11 +351,9 @@ def process_directory(
         print(f"HelioWeb objects processed: {time.time() - t0} s")
 
     if download_images:
-        # Downloading images now, we want to download for every day in the dataset
-        # Convert numpy datetime64 (strip nanoseconds component),
-        # then to a Python datetime object
-        start_date = ds["time"].data[0].astype("datetime64[s]").astype(object)
-        end_date = ds["time"].data[-1].astype("datetime64[s]").astype(object)
+        # Cover every simulation day, including runs without evolution files.
+        start_date = tim_datetime(tim_fnames[0]).replace(hour=0, minute=0, second=0)
+        end_date = tim_datetime(tim_fnames[-1])
         dt = timedelta(days=1)
         curr_date = start_date
         while curr_date <= end_date:
@@ -412,7 +408,7 @@ def process_metadata(ds, path=None, run_id=None):
 
     ds = ds.assign_attrs(run_id=run_id)
 
-    return ds.attrs
+    return {**ds.attrs, "program": "enlil", "data_format": "vts-point-data"}
 
 
 def download_hmi(date: datetime, outdir=None, resolution="1k"):
@@ -517,7 +513,7 @@ def generate_cone_metadata_dict(cone_fname):
 
 def tim_datetime(path):
     with xr.open_dataset(path, decode_times=False) as ds:
-        run_start = datetime.strptime(ds.attrs["rundate_cal"], "%Y-%m-%dT%H")
+        run_start = _convert_time(ds.attrs["rundate_cal"])
         return run_start + timedelta(seconds=float(ds["TIME"].item()))
 
 
@@ -535,19 +531,19 @@ def main():
         "--radius-downsample",
         type=int,
         default=8,
-        help="Downsample the radius dimension by this factor. Default is 1 (no downsampling).",
+        help="Downsample the radius dimension by this factor. Default is %(default)s.",
     )
     parser.add_argument(
         "--longitude-downsample",
         type=int,
         default=2,
-        help="Downsample the longitude dimension by this factor. Default is 1 (no downsampling).",
+        help="Downsample the longitude dimension by this factor. Default is %(default)s.",
     )
     parser.add_argument(
         "--latitude-downsample",
         type=int,
         default=2,
-        help="Downsample the latitude dimension by this factor. Default is 1 (no downsampling).",
+        help="Downsample the latitude dimension by this factor. Default is %(default)s.",
     )
     parser.add_argument(
         "--aggregation",

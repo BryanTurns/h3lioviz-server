@@ -7,12 +7,15 @@ class Slice:
 
     Parameters
     ----------
-    celldata : Cell Data
+    data : Point Data
         The full 3D Paraview dataset
     slice_type : str
         The type of slice ("Plane", "Sphere")
     normal : 3-tuple
         The normal to the plane (only used for "Plane" slice_type)
+    half : 3-tuple
+        Only show the half of the plane on this side of the origin, or the
+        whole plane if None (only used for "Plane" slice_type)
     radius : Number
         The radius of the sphere (only used for "Sphere" slice_type)
     name : str
@@ -21,20 +24,22 @@ class Slice:
 
     def __init__(
         self,
-        celldata,
+        data,
         slice_type="Plane",
         normal=(0, 0, 1),
+        half=None,
         radius=1,
         name="",
         view=None,
     ):
-        self.celldata = celldata
+        self.data = data
         self.name = name
         self.view = view
         # Create the Paraview Slice
-        self.slice_data = pvs.Slice(
-            registrationName=f"{name}-Slice", Input=self.celldata
-        )
+        # This interpolates the point data of the volume onto the slice. Converting
+        # cell data to point data on the slice itself instead leaves a discontinuity
+        # wherever the plane crosses from one layer of cells into the next.
+        self.slice_data = pvs.Slice(registrationName=f"{name}-Slice", Input=self.data)
         self.slice_data.SliceType = slice_type
         self.slice_data.HyperTreeGridSlicer = "Plane"
         self.slice_data.SliceOffsetValues = [0.0]
@@ -46,11 +51,18 @@ class Slice:
             self.slice_data.SliceType.Radius = radius
         else:
             raise ValueError("Can only use a Plane or Sphere slice type")
-        # Now make point data on that slice
-        self.slice = pvs.CellDatatoPointData(
-            registrationName=f"{name}-Slice-CellDatatoPointData", Input=self.slice_data
-        )
-        self.slice.ProcessAllArrays = 1
+
+        # What gets displayed, either the whole slice or one half of the plane
+        self.slice = self.slice_data
+        if half is not None and slice_type == "Plane":
+            self.slice = pvs.Clip(
+                registrationName=f"{name}-Half", Input=self.slice_data
+            )
+            self.slice.ClipType = "Plane"
+            self.slice.ClipType.Origin = [0, 0, 0]
+            self.slice.ClipType.Normal = half
+            # Keep the side the clip normal points toward
+            self.slice.Invert = 0
 
         # Set up the display
         self.slice_disp = pvs.Show(self.slice, self.view, "GeometryRepresentation")
@@ -69,10 +81,9 @@ class Slice:
         # Set up additional filters for streamlines
         # 1. Ellipse source (Circle at 0.2 AU) in the proper plane
         # 2. Calculator filter for creating the vector components
-        # 3. CellData -> PointData filter on the plane
-        # 4. StreamTracer with custom source from (1)
-        # 5. Tubes for better display of (4)
-        # 6. Arrows to indicate direction of the arrows
+        # 3. StreamTracer with custom source from (1)
+        # 4. Tubes for better display of (3)
+        # 5. Arrows to indicate direction of the arrows
 
         # Our stream tracer source needs to have the same plane
         # as our slice, and 0.2 for the radius
