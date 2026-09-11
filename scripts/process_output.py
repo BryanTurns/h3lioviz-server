@@ -531,19 +531,19 @@ def main():
         "--radius-downsample",
         type=int,
         default=8,
-        help="Downsample the radius dimension by this factor. Default is 1 (no downsampling).",
+        help="Downsample the radius dimension by this factor. Default is %(default)s.",
     )
     parser.add_argument(
         "--longitude-downsample",
         type=int,
         default=2,
-        help="Downsample the longitude dimension by this factor. Default is 1 (no downsampling).",
+        help="Downsample the longitude dimension by this factor. Default is %(default)s.",
     )
     parser.add_argument(
         "--latitude-downsample",
         type=int,
         default=2,
-        help="Downsample the latitude dimension by this factor. Default is 1 (no downsampling).",
+        help="Downsample the latitude dimension by this factor. Default is %(default)s.",
     )
     parser.add_argument(
         "--aggregation",

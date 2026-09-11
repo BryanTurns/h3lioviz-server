@@ -244,6 +244,8 @@ The primary data files used by ParaView for visualization are:
 - `pv-tim.XXXX.vts` - Compressed VTK structured-grid time-step files (where XXXX is the time-step number)
 
 Each file stores Cartesian points in AU and the simulation fields as point data.
+New output uses raw appended LZ4 compression and retains the original field precision
+for faster timestep loading.
 The 0° and 360° planes have identical coordinates and values, closing the longitude
 seam before ParaView slices the data. `TimeValue` stores UTC seconds since the Unix
 epoch, so animation and satellite positions use the simulation timestamps.

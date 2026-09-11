@@ -1,8 +1,23 @@
 # Generating H3lioviz Compatible Runs Without Lambda
 
-The processor writes one zlib-compressed `pv-tim.XXXX.vts` structured grid per
-timestep. Install the dependencies below (including `vtk`) in the processing
-environment. The ParaView server uses its bundled VTK.
+The processor writes one LZ4-compressed `pv-tim.XXXX.vts` structured grid per
+timestep, using raw appended binary data and preserving each field's floating-point
+precision. These optimized settings are automatic; no optimization flag is needed.
+Install the dependencies below (including `vtk`) in the processing environment.
+The ParaView server uses its bundled VTK.
+
+From the repository root, process a new directory containing `tim.*.nc` files:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r scripts/requirements.txt
+python scripts/process_output.py /path/to/new-run
+```
+
+Output is written to `/path/to/new-run/pv-ready-data-<run_id>/`. The default
+downsampling is 8× radius, 2× latitude, and 2× longitude. Add
+`--helioweb-objects mars,venus,mercury` if you also want to download planet positions.
 
 Fields are point data at the processed sample coordinates, with x/y/z in AU.
 For cell-centered longitudes, values at 0° are interpolated between the last and
@@ -18,6 +33,7 @@ Existing NetCDF runs still load, and VTS takes precedence if both outputs are in
 the same run directory. Run IDs remain unchanged when reprocessing the same input.
 The server does no seam blending. Legacy NetCDF runs retain cell-to-point
 conversion, but must be reprocessed to VTS to receive the seam fix.
+Existing VTS files keep their original encoding until regenerated or transcoded.
 
 From the repository root, run the writer/processor regression checks with
 `python -m unittest discover -s tests -p 'test_structured_grid.py'` in the processing

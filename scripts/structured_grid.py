@@ -79,6 +79,10 @@ def write_vts(ds, filename):
             # Linear interpolation between the samples on either side of 0.
             weight = (360.0 - longitude[-1]) / (longitude[0] + 360.0 - longitude[-1])
             seam = (1.0 - weight) * values[:, :, -1:] + weight * values[:, :, :1]
+            # The Float64 longitude weight must not promote an entire Float32
+            # field when its interpolated boundary is concatenated below.
+            if np.issubdtype(values.dtype, np.floating):
+                seam = seam.astype(values.dtype, copy=False)
             values = np.concatenate((seam, values, seam), axis=2)
         array = numpy_to_vtk(np.ascontiguousarray(values).reshape(-1), deep=True)
         array.SetName(name)
@@ -90,6 +94,8 @@ def write_vts(ds, filename):
     writer.SetFileName(str(filename))
     writer.SetInputData(grid)
     writer.SetDataModeToAppended()
-    writer.SetCompressorTypeToZLib()
+    # Avoid Base64 decoding and slow zlib decompression on every timestep.
+    writer.SetEncodeAppendedData(False)
+    writer.SetCompressorTypeToLZ4()
     if writer.Write() != 1:
         raise OSError(f"Could not write structured grid: {filename}")

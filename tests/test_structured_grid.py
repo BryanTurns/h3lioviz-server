@@ -87,8 +87,55 @@ class StructuredGridTests(unittest.TestCase):
             (expected_time,),
         )
         self.assertIn(
-            b'compressor="vtkZLibDataCompressor"', (self.path / "test.vts").read_bytes()
+            b'compressor="vtkLZ4DataCompressor"', (self.path / "test.vts").read_bytes()
         )
+        self.assertIn(
+            b'<AppendedData encoding="raw">', (self.path / "test.vts").read_bytes()
+        )
+
+    def test_preserves_field_precision_and_original_samples(self):
+        for longitude in (
+            (30, 90, 150, 210, 270, 330),
+            (0, 90, 180, 270),
+            (0, 90, 180, 270, 360),
+        ):
+            with self.subTest(longitude=longitude):
+                ds = self.dataset(longitude)
+                ds["T"] = ds.Density.astype(np.float32)
+                _, grid = self.read(ds)
+                self.assertEqual(
+                    vtk_to_numpy(grid.GetPoints().GetData()).dtype, np.float64
+                )
+                for name, dtype in (("Density", np.float64), ("T", np.float32)):
+                    values = vtk_to_numpy(grid.GetPointData().GetArray(name))
+                    self.assertEqual(values.dtype, dtype)
+                    values = values.reshape(3, 4, -1)
+                    np.testing.assert_array_equal(values[:, :, 0], values[:, :, -1])
+                    # Samples strictly inside the periodic boundary are untouched.
+                    original = (
+                        ds[name]
+                        .isel(time=0)
+                        .transpose("radius", "latitude", "longitude")
+                    )
+                    interior = (ds.longitude.values > 0) & (ds.longitude.values < 360)
+                    np.testing.assert_array_equal(
+                        values[:, :, 1:-1], original.values[:, :, interior]
+                    )
+
+    def test_float32_subnormal_boundary_rounding(self):
+        ds = self.dataset()
+        smallest = np.finfo(np.float32).smallest_subnormal
+        values = np.zeros(ds.Density.shape, dtype=np.float32)
+        values[:, -1, :, :] = 3 * smallest
+        ds["DP"] = (ds.Density.dims, values)
+        _, grid = self.read(ds)
+        result = vtk_to_numpy(grid.GetPointData().GetArray("DP")).reshape(3, 4, 8)
+        self.assertEqual(result.dtype, np.float32)
+        # Half of three subnormal units rounds to two units in Float32.
+        np.testing.assert_array_equal(
+            result[:, :, 0], np.full((3, 4), 2 * smallest, dtype=np.float32)
+        )
+        np.testing.assert_array_equal(result[:, :, 0], result[:, :, -1])
 
     def test_meridian_slice_covers_both_sides_at_and_near_seam(self):
         _, grid = self.read(self.dataset())
